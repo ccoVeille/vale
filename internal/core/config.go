@@ -1,12 +1,9 @@
 package core
 
 import (
-	"bufio"
 	"encoding/json"
-	"io"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/errata-ai/ini"
@@ -23,13 +20,20 @@ var (
 	// can be set via the `--config` flag, the `VALE_CONFIG_PATH` environment
 	// variable, or the default search process.
 	//
-	// NOTE: The config pipeline is stored in the top-level `.config`
+	// NOTE: The config pipeline is stored in the top-level `.vale-config`
 	// directory. See `cmd/vale/sync.go`.
 	ConfigDir = "config"
 
-	VocabDir  = filepath.Join(ConfigDir, "vocabularies")
-	DictDir   = filepath.Join(ConfigDir, "dictionaries")
-	TmplDir   = filepath.Join(ConfigDir, "templates")
+	// Vocabularies are loaded in `ini.go`.
+	VocabDir = filepath.Join(ConfigDir, "vocabularies")
+
+	// Dictionaries are loaded in `spelling.go#makeSpeller`.
+	DictDir = filepath.Join(ConfigDir, "dictionaries")
+
+	// Templates are loaded in `cmd/vale/custom.go`.
+	TmplDir = filepath.Join(ConfigDir, "templates")
+
+	// Ignore files are loaded in `spelling.go#NewSpelling`.
 	IgnoreDir = filepath.Join(ConfigDir, "ignore")
 )
 
@@ -76,7 +80,6 @@ type Config struct {
 	IgnoredClasses []string                   // A list of HTML classes to ignore
 	IgnoredScopes  []string                   // A list of HTML tags to ignore
 	MinAlertLevel  int                        // Lowest alert level to display
-	Vocab          []string                   // The active project
 	RuleToLevel    map[string]string          // Single-rule level changes
 	SBaseStyles    map[string][]string        // Syntax-specific base styles
 	SChecks        map[string]map[string]bool // Syntax-specific checks
@@ -87,11 +90,9 @@ type Config struct {
 	WordTemplate   string                     // The template used in YAML -> regexp list conversions
 	RootINI        string                     // the path to the project's .vale.ini file
 
-	AcceptedTokens map[string]struct{} `json:"-"` // Project-specific vocabulary (okay)
-	RejectedTokens map[string]struct{} `json:"-"` // Project-specific vocabulary (avoid)
-
 	DictionaryPath string // Location to search for dictionaries.
 
+	Vocabularies []Vocabulary         `json:"-"`
 	FallbackPath string               `json:"-"`
 	SecToPat     map[string]glob.Glob `json:"-"`
 	Styles       []string             `json:"-"`
@@ -111,14 +112,12 @@ type Config struct {
 func NewConfig(flags *CLIFlags) (*Config, error) {
 	var cfg Config
 
-	cfg.AcceptedTokens = make(map[string]struct{})
 	cfg.BlockIgnores = make(map[string][]string)
 	cfg.Flags = flags
 	cfg.Formats = make(map[string]string)
 	cfg.Asciidoctor = make(map[string]string)
 	cfg.GChecks = make(map[string]bool)
 	cfg.MinAlertLevel = 1
-	cfg.RejectedTokens = make(map[string]struct{})
 	cfg.RuleToLevel = make(map[string]string)
 	cfg.SBaseStyles = make(map[string][]string)
 	cfg.SChecks = make(map[string]map[string]bool)
@@ -129,35 +128,6 @@ func NewConfig(flags *CLIFlags) (*Config, error) {
 	cfg.FormatToLang = make(map[string]string)
 
 	return &cfg, nil
-}
-
-// AddWordListFile adds vocab terms from a provided file.
-func (c *Config) AddWordListFile(name string, accept bool) error {
-	fd, err := os.Open(name)
-	if err != nil {
-		return err
-	}
-	defer fd.Close()
-	return c.addWordList(fd, accept)
-}
-
-func (c *Config) addWordList(r io.Reader, accept bool) error {
-	scanner := bufio.NewScanner(r)
-	for scanner.Scan() {
-		word := strings.TrimSpace(scanner.Text())
-		if len(word) == 0 || strings.HasPrefix(word, "# ") { //nolint:gocritic
-			continue
-		} else if accept {
-			if _, ok := c.AcceptedTokens[word]; !ok {
-				c.AcceptedTokens[word] = struct{}{}
-			}
-		} else {
-			if _, ok := c.RejectedTokens[word]; !ok {
-				c.RejectedTokens[word] = struct{}{}
-			}
-		}
-	}
-	return scanner.Err()
 }
 
 func (c *Config) String() string {

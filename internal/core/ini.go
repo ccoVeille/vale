@@ -55,10 +55,20 @@ var syntaxOpts = map[string]func(string, *ini.Section, *Config) error{
 		candidate := sec.Key("Transform").String()
 		cfg.Stylesheets[label] = determinePath(cfg.Flags.Path, candidate)
 		return nil
-
 	},
 	"Lang": func(label string, sec *ini.Section, cfg *Config) error { //nolint:unparam
 		cfg.FormatToLang[label] = sec.Key("Lang").String()
+		return nil
+	},
+	"Vocab": func(label string, sec *ini.Section, cfg *Config) error { //nolint:unparam
+		names := mergeValues(sec.Key("Vocab").StringsWithShadows(","))
+
+		vocab, err := loadVocab(label, names, cfg)
+		if err != nil {
+			return err
+		}
+
+		cfg.Vocabularies = append(cfg.Vocabularies, *vocab)
 		return nil
 	},
 }
@@ -79,6 +89,16 @@ var globalOpts = map[string]func(*ini.Section, *Config, []string){
 	},
 	"Lang": func(sec *ini.Section, cfg *Config, _ []string) {
 		cfg.FormatToLang["*"] = sec.Key("Lang").String()
+	},
+	"Vocab": func(sec *ini.Section, cfg *Config, _ []string) {
+		names := mergeValues(sec.Key("Vocab").StringsWithShadows(","))
+
+		vocab, err := loadVocab("*", names, cfg)
+		if err != nil {
+			panic(err)
+		}
+
+		cfg.Vocabularies = append(cfg.Vocabularies, *vocab)
 	},
 }
 
@@ -141,12 +161,14 @@ var coreOpts = map[string]func(*ini.Section, *Config, []string) error{
 		return nil
 	},
 	"Vocab": func(sec *ini.Section, cfg *Config, _ []string) error {
-		cfg.Vocab = mergeValues(sec.Key("Vocab").StringsWithShadows(","))
-		for _, v := range cfg.Vocab {
-			if err := loadVocab(v, cfg); err != nil {
-				return err
-			}
+		names := mergeValues(sec.Key("Vocab").StringsWithShadows(","))
+
+		vocab, err := loadVocab("*", names, cfg)
+		if err != nil {
+			return err
 		}
+
+		cfg.Vocabularies = append(cfg.Vocabularies, *vocab)
 		return nil
 	},
 	"NLPEndpoint": func(sec *ini.Section, cfg *Config, _ []string) error { //nolint:unparam

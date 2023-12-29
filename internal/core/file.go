@@ -36,6 +36,7 @@ type File struct {
 	ChkToCtx   map[string]string // maps a temporary context to a particular check
 	Comments   map[string]bool   // comment control statements
 	Metrics    map[string]int    // count-based metrics
+	Vocab      *Vocabulary       // user-defined vocabularies
 	history    map[string]int    // -
 	limits     map[string]int    // -
 	simple     bool              // -
