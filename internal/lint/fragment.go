@@ -55,7 +55,8 @@ func (l *Linter) lintFragments(f *core.File) error {
 	l.HasDir = true
 
 	last := 0
-	for _, comment := range coalesce(getComments(f.Content, f.RealExt)) {
+	// coalesce(getComments(f.Content, f.RealExt))
+	for _, comment := range []Comment{} {
 		f.SetText(comment.Text)
 
 		switch f.NormedExt {

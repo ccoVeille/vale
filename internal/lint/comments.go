@@ -1,12 +1,25 @@
 package lint
 
 import (
-	"bufio"
-	"bytes"
+	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 
-	"github.com/errata-ai/vale/v2/internal/core"
+	sitter "github.com/smacker/go-tree-sitter"
+	"github.com/smacker/go-tree-sitter/c"
+	"github.com/smacker/go-tree-sitter/cpp"
+	"github.com/smacker/go-tree-sitter/csharp"
+	"github.com/smacker/go-tree-sitter/css"
+	"github.com/smacker/go-tree-sitter/golang"
+	"github.com/smacker/go-tree-sitter/java"
+	"github.com/smacker/go-tree-sitter/javascript"
+	"github.com/smacker/go-tree-sitter/lua"
+	"github.com/smacker/go-tree-sitter/python"
+	"github.com/smacker/go-tree-sitter/ruby"
+	"github.com/smacker/go-tree-sitter/rust"
+	"github.com/smacker/go-tree-sitter/scala"
+	"github.com/smacker/go-tree-sitter/typescript/typescript"
 )
 
 // Comment represents an in-code comment (line or block).
@@ -17,112 +30,86 @@ type Comment struct {
 	Scope  string
 }
 
-var patterns = map[string]map[string][]*regexp.Regexp{
-	".c": {
-		"inline": []*regexp.Regexp{
-			regexp.MustCompile(`(?s)/\*(.+)\*/`),
-			regexp.MustCompile(`(?s)/{2}(.+)`),
-		},
-		"blockStart": []*regexp.Regexp{
-			regexp.MustCompile(`(?ms)/\*(.+)`),
-		},
-		"blockEnd": []*regexp.Regexp{
-			regexp.MustCompile(`(.*\*/)`),
-		},
-	},
-	".clj": {
-		"inline": []*regexp.Regexp{
-			regexp.MustCompile(`(?s);+(.+)`),
-		},
-		"blockStart": []*regexp.Regexp{},
-		"blockEnd":   []*regexp.Regexp{},
-	},
-	".css": {
-		"inline": []*regexp.Regexp{
-			regexp.MustCompile(`(?s)/\*(.+)\*/`),
-		},
-		"blockStart": []*regexp.Regexp{
-			regexp.MustCompile(`(?ms)/\*(.+)`),
-		},
-		"blockEnd": []*regexp.Regexp{
-			regexp.MustCompile(`(.*\*/)`),
-		},
-	},
-	".rs": {
-		"inline": []*regexp.Regexp{
-			regexp.MustCompile(`(?s)/{3}!(.+)`),
-			regexp.MustCompile(`(?s)/{3}(.+)`),
-			regexp.MustCompile(`(?s)/{2}(.+)`),
-		},
-		"blockStart": []*regexp.Regexp{},
-		"blockEnd":   []*regexp.Regexp{},
-	},
-	".r": {
-		"inline": []*regexp.Regexp{
-			regexp.MustCompile(`(?s)#(.+)`),
-		},
-		"blockStart": []*regexp.Regexp{},
-		"blockEnd":   []*regexp.Regexp{},
-	},
-	".php": {
-		"inline": []*regexp.Regexp{
-			regexp.MustCompile(`(?s)/\*(.+)\*/`),
-			regexp.MustCompile(`(?s)#(.+)`),
-			regexp.MustCompile(`(?s)/{2}(.+)`),
-		},
-		"blockStart": []*regexp.Regexp{
-			regexp.MustCompile(`(?ms)/\*(.+)`),
-		},
-		"blockEnd": []*regexp.Regexp{
-			regexp.MustCompile(`(.*\*/)`),
-		},
-	},
-	".py": {
-		"inline": []*regexp.Regexp{
-			regexp.MustCompile(`(?s)#(.+)`),
-			regexp.MustCompile(`"""(.+)"""`),
-			regexp.MustCompile(`'''(.+)'''`),
-		},
-		"blockStart": []*regexp.Regexp{
-			regexp.MustCompile(`(?ms)^(?:\s{4,})?r?["']{3}(.+)$`),
-		},
-		"blockEnd": []*regexp.Regexp{
-			regexp.MustCompile(`(.*["']{3})`),
-		},
-	},
-	".rb": {
-		"inline": []*regexp.Regexp{
-			regexp.MustCompile(`(?s)#(.+)`),
-		},
-		"blockStart": []*regexp.Regexp{
-			regexp.MustCompile(`(?ms)^=begin(.+)`),
-		},
-		"blockEnd": []*regexp.Regexp{
-			regexp.MustCompile(`(^=end)`),
-		},
-	},
-	".lua": {
-		"inline": []*regexp.Regexp{
-			regexp.MustCompile(`(?s)-- (.+)`),
-		},
-		"blockStart": []*regexp.Regexp{
-			regexp.MustCompile(`(?ms)^-{2,3}\[\[(.*)`),
-		},
-		"blockEnd": []*regexp.Regexp{
-			regexp.MustCompile(`(.*\]\])`),
-		},
-	},
-	".hs": {
-		"inline": []*regexp.Regexp{
-			regexp.MustCompile(`(?s)-- (.+)`),
-		},
-		"blockStart": []*regexp.Regexp{
-			regexp.MustCompile(`(?ms)^\{-.(.*)`),
-		},
-		"blockEnd": []*regexp.Regexp{
-			regexp.MustCompile(`(.*-\})`),
-		},
-	},
+func getLanguageFromExt(ext string) (*sitter.Language, error) {
+	switch ext {
+	case ".go":
+		return golang.GetLanguage(), nil
+	case ".c", ".h":
+		return c.GetLanguage(), nil
+	case ".cpp", ".hpp", ".cc", ".hh", ".cxx", ".hxx":
+		return cpp.GetLanguage(), nil
+	case ".cs", ".csx":
+		return csharp.GetLanguage(), nil
+	case ".css":
+		return css.GetLanguage(), nil
+	case ".java", ".bsh":
+		return java.GetLanguage(), nil
+	case ".js":
+		return javascript.GetLanguage(), nil
+	case ".lua":
+		return lua.GetLanguage(), nil
+	case ".py", ".py3", ".pyw", ".pyi", ".pyx", ".rpy":
+		return python.GetLanguage(), nil
+	case ".rb":
+		return ruby.GetLanguage(), nil
+	case ".rs":
+		return rust.GetLanguage(), nil
+	case ".scala", ".sbt":
+		return scala.GetLanguage(), nil
+	case ".ts":
+		return typescript.GetLanguage(), nil
+	default:
+		return nil, errors.New("unsupported extension")
+	}
+
+	// fallback: haskell, less, perl, php, powershell, r, sass, swift
+}
+
+func getComments(source []byte, lang *sitter.Language) ([]Comment, error) {
+	var comments []Comment
+
+	parser := sitter.NewParser()
+	parser.SetLanguage(lang)
+
+	tree := parser.Parse(nil, source)
+	n := tree.RootNode()
+
+	q, err := sitter.NewQuery([]byte("(comment)+ @comment"), lang)
+	if err != nil {
+		return comments, err
+	}
+
+	qc := sitter.NewQueryCursor()
+	qc.Exec(q, n)
+
+	for {
+		m, ok := qc.NextMatch()
+		if !ok {
+			break
+		}
+		for _, c := range m.Captures {
+			children := int(c.Node.ChildCount())
+			for i := 0; i < children; i++ {
+				child := c.Node.Child(i)
+				fmt.Println(child)
+			}
+			text := c.Node.Content(source)
+
+			scope := "text.comment.line"
+			if strings.Count(text, "\n") > 0 {
+				scope = "text.comment.block"
+			}
+
+			comments = append(comments, Comment{
+				Line:   int(c.Node.StartPoint().Row) + 1,
+				Offset: int(c.Node.StartPoint().Column),
+				Scope:  scope,
+				Text:   text,
+			})
+		}
+	}
+
+	return comments, nil
 }
 
 func getSubMatch(r *regexp.Regexp, s string) string {
@@ -146,74 +133,4 @@ func doMatch(p []*regexp.Regexp, line string) string {
 		}
 	}
 	return ""
-}
-
-func getPatterns(ext string) map[string][]*regexp.Regexp {
-	for r, f := range core.FormatByExtension {
-		m, _ := regexp.MatchString(r, ext)
-		if m {
-			return patterns[f[0]]
-		}
-	}
-	return map[string][]*regexp.Regexp{}
-}
-
-func getComments(content, ext string) []Comment {
-	var comments []Comment
-	var lines, start int
-	var inBlock, ignore bool
-	var block bytes.Buffer
-
-	scanner := bufio.NewScanner(strings.NewReader(content))
-
-	byLang := getPatterns(ext)
-	if len(byLang) == 0 {
-		return comments
-	}
-
-	scanner.Split(core.SplitLines)
-	for scanner.Scan() {
-		line := scanner.Text() + "\n"
-
-		lines++
-		if inBlock {
-			// We're in a block comment.
-			if match := doMatch(byLang["blockEnd"], line); len(match) > 0 {
-				// We've found the end of the block.
-
-				comments = append(comments, Comment{
-					Text:   block.String(),
-					Line:   start,
-					Offset: padding(line),
-					Scope:  "text.comment.block",
-				})
-
-				block.Reset()
-				inBlock = false
-			} else {
-				block.WriteString(strings.TrimLeft(line, " "))
-			}
-		} else if match := doMatch(byLang["inline"], line); len(match) > 0 {
-			// We've found an inline comment.
-			//
-			// We need padding here in order to calculate the column
-			// span because, for example, a line like  'print("foo") # ...'
-			// will be condensed to '# ...'.
-			comments = append(comments, Comment{
-				Text:   match,
-				Line:   lines,
-				Offset: strings.Index(line, match),
-				Scope:  "text.comment.line",
-			})
-		} else if match = doMatch(byLang["blockStart"], line); len(match) > 0 && !ignore {
-			// We've found the start of a block comment.
-			block.WriteString(match)
-			start = lines
-			inBlock = true
-		} else if match = doMatch(byLang["blockEnd"], line); len(match) > 0 {
-			ignore = !ignore
-		}
-	}
-
-	return comments
 }

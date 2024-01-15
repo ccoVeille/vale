@@ -17,6 +17,6 @@ func Println(a ...interface{}) (n int, err error) {
 	return 0, errors.New("")
 }
 
-func main() {
+func main() { // foo bar
 
 }

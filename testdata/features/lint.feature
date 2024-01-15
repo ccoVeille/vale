@@ -22,6 +22,12 @@ Feature: Lint
             test.jl:47:3:vale.Annotations:'XXX' left in text
             """
 
+    Scenario: Lint a JavaScript file
+        When I lint "test.js"
+        Then the output should contain exactly:
+            """
+            """
+
     Scenario: Lint an Org file
         When I lint "test.org"
         Then the output should contain exactly:

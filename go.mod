@@ -21,6 +21,7 @@ require (
 	github.com/otiai10/copy v1.7.0
 	github.com/pterm/pterm v0.12.33
 	github.com/remeh/sizedwaitgroup v1.0.0
+	github.com/smacker/go-tree-sitter v0.0.0-20231219031718-233c2f923ac7
 	github.com/spf13/pflag v1.0.5
 	github.com/yuin/goldmark v1.5.6
 	golang.org/x/exp v0.0.0-20231006140011-7918f672742d
